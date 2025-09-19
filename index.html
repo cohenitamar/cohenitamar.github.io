@@ -38,8 +38,8 @@
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input id="email" placeholder="Email" type="email">
         <input id="password" placeholder="Password (min 6 chars)" type="password">
-        <button id="btn-signup" class="small">Sign up</button>
-        <button id="btn-signin" class="small">Sign in</button>
+        <button id="btn-signup" type="button" class="small">Sign up</button>
+        <button id="btn-signin" type="button" class="small">Sign in</button>
         <div style="margin-left:8px" class="muted">Only authenticated users can access their own data.</div>
       </div>
     </section>
@@ -63,7 +63,7 @@
 
   <script>
     /***** IMPORTANT: Replace with your Supabase project values *****/
-     const SUPABASE_URL = 'https://cozyhjiqghqzqalvjwxn.supabase.co'; // REPLACE
+    const SUPABASE_URL = 'https://cozyhjiqghqzqalvjwxn.supabase.co'; // REPLACE
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvenloamlxZ2hxenFhbHZqd3huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyNzI5MDcsImV4cCI6MjA3Mzg0ODkwN30.pT3BWtrWWp5wag18qvegWqKXrY5J2hpEuehGXgaQQ_s'; // REPLACE (anon key only)
 
     const { createClient } = window.supabase;
@@ -108,13 +108,31 @@
     }
 
     btnSignup.addEventListener('click', async ()=>{
-      const { error } = await supabase.auth.signUp({ email: emailEl.value, password: passEl.value });
+      try{
+        btnSignup.disabled = true;
+        const { error } = await supabase.auth.signUp({ email: emailEl.value.trim(), password: passEl.value });
+        if(error) throw error;
+        alert('Check your inbox to confirm your email (if required). Then click Sign in.');
+      }catch(err){
+        console.error('signup error', err);
+        alert(err.message || String(err));
+      }finally{ btnSignup.disabled = false; }
+    });
       if(error) return alert(error.message);
       alert('Check your inbox to confirm your email (if required).');
     });
 
     btnSignin.addEventListener('click', async ()=>{
-      const { error } = await supabase.auth.signInWithPassword({ email: emailEl.value, password: passEl.value });
+      try{
+        btnSignin.disabled = true;
+        const { data, error } = await supabase.auth.signInWithPassword({ email: emailEl.value.trim(), password: passEl.value });
+        if(error) throw error;
+        await refreshSession();
+      }catch(err){
+        console.error('signin error', err);
+        alert(err.message || String(err));
+      }finally{ btnSignin.disabled = false; }
+    });
       if(error) return alert(error.message);
     });
 
