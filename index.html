@@ -26,7 +26,7 @@
     <header>
       <div>
         <h2 style="margin:0">Exercise Tracker</h2>
-        <div class="muted">Supabase (Postgres + Auth). Tracks exercise name + weight. No date field.</div>
+        <div class="muted">Tracks exercises/weights with Supabase (Postgres + Auth). No Firebase.</div>
       </div>
       <div class="auth">
         <div id="user-info" class="muted">Not signed in</div>
@@ -48,6 +48,7 @@
       <form id="add-form" style="margin-top:12px">
         <input id="exercise" placeholder="Exercise (e.g. Bench Press)" required>
         <input id="weight" placeholder="Weight (kg)" type="number" step="0.1" required>
+        <input id="date" type="date" required>
         <button type="submit">Add / Save</button>
         <button type="button" id="cancel-edit" class="small hidden">Cancel</button>
       </form>
@@ -63,8 +64,8 @@
 
   <script>
     /***** IMPORTANT: Replace with your Supabase project values *****/
-    const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co'; // REPLACE
-    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY'; // REPLACE (anon key only)
+    const SUPABASE_URL = 'https://cozyhjiqghqzqalvjwxn.supabase.co'; // <- replace
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvenloamlxZ2hxenFhbHZqd3huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyNzI5MDcsImV4cCI6MjA3Mzg0ODkwN30.pT3BWtrWWp5wag18qvegWqKXrY5J2hpEuehGXgaQQ_s'; // <- replace
 
     const { createClient } = window.supabase;
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -82,6 +83,7 @@
     const listEl = document.getElementById('list');
     const exerciseEl = document.getElementById('exercise');
     const weightEl = document.getElementById('weight');
+    const dateEl = document.getElementById('date');
     const cancelEdit = document.getElementById('cancel-edit');
 
     let editId = null;
@@ -122,7 +124,9 @@
       await supabase.auth.signOut();
     });
 
-    supabase.auth.onAuthStateChange(()=>{ refreshSession(); });
+    supabase.auth.onAuthStateChange((_event, _session)=>{
+      refreshSession();
+    });
 
     // ---------- Data ----------
     async function loadList(){
@@ -130,7 +134,7 @@
       const { data, error } = await supabase
         .from('exercises')
         .select('*')
-        .order('inserted_at', { ascending: false });
+        .order('date', { ascending: false });
       if(error){ alert(error.message); return; }
       renderList(data || []);
     }
@@ -140,7 +144,8 @@
       if(!currentUser) return alert('Sign in first');
       const row = {
         exercise: exerciseEl.value.trim(),
-        weight: parseFloat(weightEl.value)
+        weight: parseFloat(weightEl.value),
+        date: dateEl.value
       };
       let error;
       if(editId){
@@ -161,7 +166,7 @@
       for(const it of items){
         const div = document.createElement('div'); div.className='item';
         const left = document.createElement('div');
-        left.innerHTML = `<strong>${escapeHtml(it.exercise)}</strong><div class="muted">${it.weight} kg • added ${new Date(it.inserted_at).toLocaleString()}</div>`;
+        left.innerHTML = `<strong>${escapeHtml(it.exercise)}</strong><div class="muted">${it.date} • ${it.weight} kg</div>`;
         const controls = document.createElement('div'); controls.className='controls';
         const btnEdit = document.createElement('button'); btnEdit.textContent='Edit'; btnEdit.className='small';
         const btnDel = document.createElement('button'); btnDel.textContent='Delete'; btnDel.className='small';
@@ -178,7 +183,7 @@
     }
 
     function startEdit(it){
-      editId = it.id; exerciseEl.value = it.exercise; weightEl.value = it.weight;
+      editId = it.id; exerciseEl.value = it.exercise; weightEl.value = it.weight; dateEl.value = it.date;
       cancelEdit.classList.remove('hidden');
     }
 
@@ -189,7 +194,7 @@
     function subscribeRealtime(){
       if(channel) supabase.removeChannel(channel);
       channel = supabase.channel('public:exercises')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'exercises' }, ()=>{
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'exercises' }, (payload)=>{
           loadList();
         })
         .subscribe();
@@ -204,41 +209,46 @@
   2) Get your Project URL and anon key: Project Settings -> API. Put them in SUPABASE_URL/KEY above.
   3) Create table and policies (SQL below). Go to SQL editor in Supabase and run:
 
-  -- Enable UUID generator
-  create extension if not exists pgcrypto;
-
-  -- Table (NO date column)
+  -- Table
   create table if not exists public.exercises (
     id uuid primary key default gen_random_uuid(),
-    user_id uuid not null default auth.uid(),
-    exercise text not null check (length(exercise) between 1 and 200),
-    weight numeric(10,2) not null check (weight > 0),
-    inserted_at timestamptz not null default now()
+    user_id uuid not null references auth.users(id) on delete cascade,
+    exercise text not null,
+    weight numeric not null,
+    date date not null,
+    inserted_at timestamp with time zone default now()
   );
-
-  -- Make sure default exists even if table was created before
-  alter table public.exercises alter column user_id set default auth.uid();
 
   -- Enable Row Level Security
   alter table public.exercises enable row level security;
 
-  -- Reset policies if they already exist
-  drop policy if exists "exercises_select" on public.exercises;
-  drop policy if exists "exercises_insert" on public.exercises;
-  drop policy if exists "exercises_update" on public.exercises;
-  drop policy if exists "exercises_delete" on public.exercises;
-
   -- Policies: each user can manage only their rows
-  create policy "exercises_select" on public.exercises
+  create policy "Users can read own rows" on public.exercises
     for select using (auth.uid() = user_id);
-  create policy "exercises_insert" on public.exercises
-    for insert with check (auth.uid() = coalesce(user_id, auth.uid()));
-  create policy "exercises_update" on public.exercises
+  create policy "Users can insert own rows" on public.exercises
+    for insert with check (auth.uid() = user_id);
+  create policy "Users can update own rows" on public.exercises
     for update using (auth.uid() = user_id);
-  create policy "exercises_delete" on public.exercises
+  create policy "Users can delete own rows" on public.exercises
     for delete using (auth.uid() = user_id);
 
-  4) Auth settings: enable Email/Password sign-ins (or disable new sign-ups and create only your user).
+  -- Trigger to auto-fill user_id on insert from JWT
+  create or replace function public.handle_exercises_user_id()
+  returns trigger as $$
+  begin
+    new.user_id := auth.uid();
+    return new;
+  end;
+  $$ language plpgsql security definer;
+
+  drop trigger if exists set_exercises_user_id on public.exercises;
+  create trigger set_exercises_user_id
+  before insert on public.exercises
+  for each row execute procedure public.handle_exercises_user_id();
+
+  4) Auth settings: enable Email/Password signups (or restrict to an allowlist under Auth -> Policies).
+     If you want to block random signups, set up an **email allowlist** via Auth -> Policies -> Add policy -> 
+     "Only allow these email domains/addresses" or use Admin invite-only.
 
   5) Deploy to GitHub Pages:
      - Put this file as `index.html` in `<your-username>.github.io` repo.
@@ -246,8 +256,8 @@
 
   OPTIONAL hardening:
     - Turn off new registrations and create your own user manually in the dashboard.
-    - Add an allowlist for your email only.
-    - Rotate your anon key from Settings -> API if you ever exposed it publicly.
+    - Add an allowlist: create a Postgres function that checks `auth.jwt()` for allowed emails; add to all policies.
+    - Use OTP (magic link) instead of passwords.
 
   -->
 </body>
