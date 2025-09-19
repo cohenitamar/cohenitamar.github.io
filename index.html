@@ -63,7 +63,7 @@
 
   <script>
     /***** IMPORTANT: Replace with your Supabase project values *****/
-    const SUPABASE_URL = 'https://cozyhjiqghqzqalvjwxn.supabase.co'; // REPLACE
+     const SUPABASE_URL = 'https://cozyhjiqghqzqalvjwxn.supabase.co'; // REPLACE
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvenloamlxZ2hxenFhbHZqd3huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyNzI5MDcsImV4cCI6MjA3Mzg0ODkwN30.pT3BWtrWWp5wag18qvegWqKXrY5J2hpEuehGXgaQQ_s'; // REPLACE (anon key only)
 
     const { createClient } = window.supabase;
@@ -147,8 +147,13 @@
       if(editId){
         ({ error } = await supabase.from('exercises').update(row).eq('id', editId));
         editId = null; cancelEdit.classList.add('hidden');
+        await loadList();
       } else {
         ({ error } = await supabase.from('exercises').insert(row));
+      }
+      if(error){ alert(error.message); return; }
+      addForm.reset();
+      await loadList();
       }
       if(error){ alert(error.message); return; }
       addForm.reset();
@@ -170,7 +175,8 @@
         btnDel.addEventListener('click', async ()=>{
           if(!confirm('Delete this entry?')) return;
           const { error } = await supabase.from('exercises').delete().eq('id', it.id);
-          if(error) alert(error.message);
+          if(error) { alert(error.message); return; }
+          await loadList();
         });
         controls.appendChild(btnEdit); controls.appendChild(btnDel);
         div.appendChild(left); div.appendChild(controls);
